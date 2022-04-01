@@ -1,0 +1,61 @@
+#!venv/bin/python
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import typing
+
+
+SETUP_PY = """
+from setuptools import setup
+
+setup(
+    name={name},
+    version={version},
+    install_requires={dependencies},
+)
+"""
+
+
+def generate_package(
+    name: str,
+    version: str,
+    dependencies: typing.Sequence[str],
+    dest: str = "pypi/wheels",
+) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        setup_py = os.path.join(td, "setup.py")
+        with open(setup_py, "w") as f:
+            f.write(SETUP_PY.format(
+                name=repr(name),
+                version=repr(version),
+                dependencies=repr(list(dependencies)),
+            ))
+
+        subprocess.check_call(
+            (sys.executable, setup_py, "bdist_wheel"),
+            cwd=td,
+        )
+        dist = os.path.join(td, "dist")
+        wheel, = os.listdir(dist)
+        shutil.move(os.path.join(dist, wheel), dest)
+
+
+def main() -> typing.Optional[int]:
+    # "a" will be the only top-level requirement.
+    generate_package("a", "1.0.0", ("b==1.0.0", "c"))
+
+    # "b" has 2 versions.
+    generate_package("b", "1.0.0", ())
+    generate_package("b", "2.0.0", ())
+
+    # "c" has lots of versions but only the oldest (1.0.0) permits a compatible
+    # version of "b" with what "a" wants.
+    generate_package("c", "1.0.0", ("b==1.0.0",))
+    for v in range(1, 200):
+        generate_package("c", f"1.0.{v}", ("b==2.0.0",))
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
